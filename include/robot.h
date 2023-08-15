@@ -45,10 +45,18 @@ class Robot
 public:
   // robot poses
   Pose<double> pose_;
+
   // robot noises
   double forward_noise = 0.;
   double turn_noise = 0.;
   double sense_noise = 0.;
+
+  // Maximum range of the sensor
+  double max_range = 100.;
+
+  // current measurements mapped the landmarks inside the range to the distance
+  std::map<int, double> curr_measurements;
+
   Robot()
   {
     // robot's x,y  coordinate
@@ -112,23 +120,26 @@ public:
   /**
    * @brief Sense the environment
    */
-  std::vector<double> sense(const std::vector<std::array<double, 2>> &landmarks)
+  std::map<int, double> sense(const std::vector<std::array<double, 2>> &landmarks)
   {
     // Measure the distances from the robot toward the landmarks
-    std::vector<double> z(landmarks.size());
+    curr_measurements.clear();
     double dist;
 
     for (int i = 0; i < landmarks.size(); i++)
     {
       dist = sqrt(pow((pose_.x - landmarks[i][0]), 2) + pow((pose_.y - landmarks[i][1]), 2));
-      dist += gen_gauss_random(0.0, sense_noise);
-      z[i] = dist;
+      if (std::abs(dist) < max_range)
+      {
+        dist += gen_gauss_random(0.0, sense_noise);
+        curr_measurements.emplace(std::make_pair(i, dist));
+      }
     }
-    return z;
+    return curr_measurements;
   }
 
   /**
-   * @brief Move the robot
+   * @brief Move the robot (or particle)
    */
   Robot move(double turn, double forward)
   {
@@ -155,7 +166,9 @@ public:
 
     return res;
   }
-
+  /**
+   * @brief print the robot pose
+   */
   std::string show_pose() const
   {
     // Returns the robot current position and orientation
@@ -165,11 +178,11 @@ public:
   std::string read_sensors(const std::vector<std::array<double, 2>> landmarks)
   {
     // Returns all the distances from the robot toward the landmarks
-    std::vector<double> z = sense(landmarks);
+    std::map<int, double> z = sense(landmarks);
     std::string readings = "[";
-    for (int i = 0; i < z.size(); i++)
+    for (const auto &[lmark_idx, measurement_value] : z)
     {
-      readings += std::to_string(z[i]) + " ";
+      readings += std::to_string(measurement_value) + " ";
     }
     readings[readings.size() - 1] = ']';
 
@@ -177,17 +190,17 @@ public:
   }
 
   /**
-   * @brief Calculate the probability of the measurements from the landmarks.
-   * The distance between the robot pose and the landmarks is the mean of the Gaussian
+   * @brief Calculate the probability of the measurements from the landmarks for the particles.
+   * The distance between the particle pose (not the robot!) and the landmarks is the mean of the Gaussian.
    */
-  double measurement_prob(std::vector<double> measurements, const std::vector<std::array<double, 2>> landmarks)
+  double measurement_prob(std::map<int, double> robot_measurements, const std::vector<std::array<double, 2>> landmarks)
   {
     double prob = 1.0;
     double dist;
-    for (int i = 0; i < landmarks.size(); i++)
+    for (const auto &[lmark_idx, measurement_value] : robot_measurements)
     {
-      dist = sqrt(pow((pose_.x - landmarks[i][0]), 2) + pow((pose_.y - landmarks[i][1]), 2));
-      prob *= calc_gaussian(dist, sense_noise, measurements[i]);
+      dist = sqrt(pow((pose_.x - landmarks[lmark_idx][0]), 2) + pow((pose_.y - landmarks[lmark_idx][1]), 2));
+      prob *= calc_gaussian(dist, sense_noise, measurement_value);
     }
 
     return prob;
@@ -195,6 +208,7 @@ public:
 
   /**
    * @brief Evaluation the estimation by calculating the mean error of the system
+   * @return mean error
    */
   double evaluation(std::vector<Robot> particles)
   {
@@ -213,7 +227,7 @@ public:
   /**
    * @brief Visualize the MCL with Matplotlib
    */
-  void visualization(int n, Robot robot, int step, std::vector<Robot> &predict, std::vector<Robot> resampling, const std::vector<std::array<double, 2>>& landmarks, double delay = 0.01, std::string save_to = "")
+  void visualization(int n, Robot robot, int step, std::vector<Robot> &predict, std::vector<Robot> resampling, const std::vector<std::array<double, 2>> &landmarks, double delay = 0.01, std::string save_to = "")
   {
 
     plt::cla();
@@ -223,33 +237,46 @@ public:
     plt::ylim(0, static_cast<int>(config::world_size));
 
     // Draw particles in green
+    std::vector<double> particles_x(n);
+    std::vector<double> particles_y(n);
     for (int i = 0; i < n; i++)
     {
-      double x_val = predict[i].pose_.x;
-      double y_val = predict[i].pose_.y;
-      plt::plot(std::vector({x_val}), std::vector({y_val}), "go");
+      particles_x[i] = (predict[i].pose_.x);
+      particles_y[i] = (predict[i].pose_.y);
     }
+    plt::plot(particles_x, particles_y, "go", {{"label", "particles"}});
 
-    // Draw resampled particles in yellow
+    // Draw resampled particles in red
+    std::vector<double> resampled_x(n);
+    std::vector<double> resampled_y(n);
     for (int i = 0; i < n; i++)
     {
-      double x_val = resampling[i].pose_.x;
-      double y_val = resampling[i].pose_.y;
-      plt::plot(std::vector({x_val}), std::vector({y_val}), "yo");
+      resampled_x[i] = resampling[i].pose_.x;
+      resampled_y[i] = resampling[i].pose_.y;
     }
+    plt::plot(resampled_x, resampled_y, "ro", {{"label", "resampled"}});
 
-    // Draw landmarks in red
+    // Draw landmarks in black
+    std::vector<double> lmark_x;
+    std::vector<double> lmark_y;
     for (int i = 0; i < landmarks.size(); i++)
     {
-      plt::plot(std::vector({landmarks[i][0]}), std::vector({landmarks[i][1]}), "ro");
+      lmark_x.push_back(landmarks[i][0]);
+      lmark_y.push_back(landmarks[i][1]);
     }
-
+    plt::plot(lmark_x, lmark_y, "ko", {{"label", "landmarks"}});
     // Draw robot position in blue
     double x_val = robot.pose_.x;
     double y_val = robot.pose_.y;
-    plt::plot(std::vector<double>({x_val}), std::vector<double>({y_val}), "bo");
+    plt::plot(std::vector<double>({x_val}), std::vector<double>({y_val}), "bo", {{"label", "robot pose"}});
 
+    // Draw measurements
+    for (const auto &[key, value] : curr_measurements)
+    {
+      plt::plot(std::vector({robot.pose_.x, landmarks[key][0]}), std::vector({robot.pose_.y, landmarks[key][1]}), "c:");
+    }
     plt::axis("equal");
+    plt::legend();
     plt::grid(true);
     plt::pause(delay);
 
@@ -262,6 +289,10 @@ public:
   }
 
 private:
+  /**
+   * @brief Generate a random value from a Gaussian / normal distribution
+   * @return random value
+   */
   double gen_gauss_random(double mean, double variance)
   {
     // Gaussian random

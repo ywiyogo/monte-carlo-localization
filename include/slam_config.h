@@ -8,5 +8,5 @@
 namespace config
 {
     // Map size in meters
-    constexpr double world_size = 200.0;
+    constexpr double world_size = 300.0;
 }

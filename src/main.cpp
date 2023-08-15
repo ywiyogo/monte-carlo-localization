@@ -15,11 +15,12 @@
 
 int main()
 {
-  // Landmarks
+  // Landmarks definition
+  // ---------------------
   // std::vector<std::array<double, 2>> landmarks = {{{10.0, 20.0}, {10.0, 80.0}, {20.0, 50.0}, {50.0, 10.0}, {50.0, 80.0}, {80.0, 80.0}, {80.0, 20.0}, {90.0, 50.0}}};
 
   std::vector<std::array<double, 2>> landmarks;
-  for (int x = 0; x < 20; x++)
+  for (int x = 0; x < 15; x++)
   {
     for (int y = 0; y < 2; y++)
     {
@@ -27,9 +28,10 @@ int main()
     }
   }
 
-  Robot robot(100., 10, 0.);
+  // Robot definition with the start pose
+  Robot robot(0., 10, 0.);
 
-  // Create a set of particles that has the robot
+  // Particle definition with the same class of the robot
   int n = 1000;
   std::vector<Robot> particles;
   particles.resize(n);
@@ -39,13 +41,14 @@ int main()
     particles[i].set_noise(0.05, 0.05, 5.0);
   }
 
-  std::vector<double> measurements;
+  std::map<int, double> measurements;
   // move simulation parameters for robot and particle prediction must be equal
-  double turn_sim = 0.1;
+  double turn_sim = 0.0;
   double move_sim = 3.;
 
-  // Iterating the simulation over the time steps
-  int steps = 60;
+  // Simulation over the time steps
+  // ------------------------------
+  int steps = 80;
   for (unsigned int t = 0; t < steps; t++)
   {
     // Move the robot and sense the environment
@@ -99,7 +102,7 @@ int main()
 
     // Create a new folder otherwise the library returns a std::runtime_error
     mkdir("images", 0755);
-    robot.visualization(n, robot, t, predict, resampling, landmarks, 0.0001, "images/steps");
+    robot.visualization(n, robot, t, predict, resampling, landmarks, 0.001, "images/steps");
 
   } // End of simulation
 
